@@ -1,15 +1,17 @@
 require('dotenv').config(); // Muat variabel lingkungan dari .env
 const express = require('express');
 const path = require('path');
-const connectDB = require('./config/db'); // Koneksi MongoDB
+const connectDB = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
 const commentRoutes = require('./routes/commentRoutes');
 const uploadRoutes = require('./routes/uploadRoutes'); // Import rute upload
 const newsRoutes = require('./routes/newsRoutes'); // ← Tambahan untuk proxy berita
+const articleRoutes = require('./routes/article'); // Import rute artikel baru
+const commentApiRoutes = require('./routes/comment'); // Import rute comment API baru
 const { errorHandler } = require('./middleware/errorMiddleware');
 const cors = require('cors'); // Import CORS
 
-// Koneksi ke database
+// Koneksi ke database MongoDB
 connectDB();
 
 const app = express();
@@ -30,9 +32,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Rute API
 app.use('/api/auth', authRoutes);
-app.use('/api', commentRoutes); // Rute komentar
+app.use('/api', commentRoutes); // Rute komentar lama
 app.use('/api', uploadRoutes);  // Rute upload
 app.use('/api/news', newsRoutes); // ← Rute proxy berita tambahan
+app.use('/api/article', articleRoutes); // Rute artikel baru untuk Flutter
+app.use('/api/comment', commentApiRoutes); // Rute comment API baru untuk Flutter
 
 // Rute untuk /api (opsional, untuk uji koneksi)
 app.get('/api', (req, res) => {

@@ -20,7 +20,7 @@
     "express-async-handler": "^1.2.0",
     "google-auth-library": "^10.1.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.16.1",
+    "mongoose": "^8.16.2",
     "multer": "^2.0.1",
     "nodemailer": "^7.0.5",
     "puppeteer": "^24.12.0"

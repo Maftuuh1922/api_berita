@@ -1,119 +1,105 @@
 // models/User.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 
-const UserSchema = mongoose.Schema(
-  {
-    displayName: {
-      type: String,
-      // Hapus 'required: [true, 'Nama tampilan wajib diisi']' dari sini
-    },
-    email: {
-      type: String,
-      required: [true, 'Email wajib diisi'],
-      unique: true,
-      match: [
-        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
-        'Silakan masukkan email yang valid',
-      ],
-    },
-    password: {
-      type: String,
-      required: [true, 'Password wajib diisi'],
-      minlength: 6,
-      select: false,
-    },
-    photoUrl: {
-      type: String,
-      default: null,
-    },
-    isEmailVerified: {
-      type: Boolean,
-      default: false,
-    },
-    emailVerificationCode: {
-      type: String,
-      select: false,
-    },
-    emailVerificationExpires: {
-      type: Date,
-      select: false,
-    },
-    resetPasswordToken: {
-      type: String,
-      select: false,
-    },
-    resetPasswordExpire: {
-      type: Date,
-      select: false,
-    },
-    googleId: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
+const userSchema = new mongoose.Schema({
+  username: {
+    type: String,
+    required: [true, 'Username is required'],
+    unique: true,
+    trim: true
   },
-  {
-    timestamps: true,
-  }
-);
-
-// Enkripsi password sebelum menyimpan
-UserSchema.pre('save', async function (next) {
-  if (!this.isModified('password') || !this.password) { // Tambahkan !this.password check
-    next();
-  }
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
+  email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+    lowercase: true,
+    trim: true
+  },
+  password: {
+    type: String,
+    required: [true, 'Password is required'],
+    minlength: 6
+  },
+  displayName: {
+    type: String,
+    trim: true
+  },
+  name: {
+    type: String,
+    trim: true
+  },
+  isVerified: {
+    type: Boolean,
+    default: false
+  },
+  verificationToken: String,
+  resetPasswordToken: String,
+  resetPasswordExpire: Date,
+  googleId: String
+}, {
+  timestamps: true
 });
 
-// Metode untuk membandingkan password
-UserSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
+// Hash password before saving - CRITICAL FIX
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) {
+    return next();
+  }
+  
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Compare password method - CRITICAL FIX
+userSchema.methods.matchPassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Metode untuk membuat JWT
-UserSchema.methods.getSignedJwtToken = function () {
-  const payload = {
-    id: this._id,
-    email: this.email,
-    displayName: this.displayName,
-    photoUrl: this.photoUrl,
-    verified: this.isEmailVerified,
-    createdAt: this.createdAt ? this.createdAt.toISOString() : null,
-    lastLogin: new Date().toISOString(),
-  };
-  return jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: '1h',
-  });
+// Method untuk kompatibilitas dengan kode lama
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Metode untuk membuat refresh token
-UserSchema.methods.getRefreshToken = function () {
-  return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
-    expiresIn: '7d',
-  });
-};
+module.exports = mongoose.model('User', userSchema);
 
-// Metode untuk membuat kode verifikasi email
-UserSchema.methods.getEmailVerificationCode = function () {
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  this.emailVerificationCode = code;
-  this.emailVerificationExpires = Date.now() + 10 * 60 * 1000;
-  return code;
-};
+// routes/email.js
+const express = require('express');
+const router = express.Router();
+const User = require('../models/User');
 
-// Metode untuk membuat token reset password
-UserSchema.methods.getResetPasswordToken = function () {
-  const resetToken = require('crypto').randomBytes(20).toString('hex');
-  this.resetPasswordToken = require('crypto')
-    .createHash('sha256')
-    .update(resetToken)
-    .digest('hex');
-  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
-  return resetToken;
-};
+// Cek apakah email sudah terdaftar
+router.get('/check-email', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  const user = await User.findOne({ email });
+  res.json({ exists: !!user });
+});
 
-module.exports = mongoose.model('User', UserSchema);
+// Login route
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    // Check password
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+    
+    // Generate token (pseudo code, implement your own token logic)
+    const token = 'GENERATED_TOKEN'; // Replace with actual token generation logic
+    
+    res.json({ success: true, user: { id: user._id, email: user.email, displayName: user.displayName }, token });
+  } catch (error) {
+    console.error('Error in /login:', error);
+    res.status(500).json({ message: 'Server error, tidak bisa login.' });
+  }
+});
+
+module.exports = router;
