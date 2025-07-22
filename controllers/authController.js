@@ -1,6 +1,7 @@
 // file: controllers/authController.js
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
+const sendEmail = require("../utils/sendEmail");
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -45,6 +46,7 @@ const sendTokenResponse = (user, statusCode, res, message = "Success") => {
   });
 };
 
+const pendingUsers = new Map();
 const bcrypt = require("bcryptjs");
 
 // Fungsi untuk generate OTP, bisa juga pakai method User
@@ -52,7 +54,6 @@ const registerUser = async (req, res) => {
   const { username, email, password } = req.body;
 
   try {
-    // Validasi input dasar
     if (!username || !email || !password) {
       return res.status(400).json({ message: "Semua field harus diisi" });
     }
@@ -61,38 +62,46 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ message: "Password minimal 8 karakter" });
     }
 
-    // Cek apakah email sudah terdaftar
+    // Cek email dan username di database
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({ message: "Email sudah terdaftar" });
     }
 
-    // Cek apakah username sudah dipakai
     const usernameTaken = await User.findOne({ username: username.trim() });
     if (usernameTaken) {
       return res.status(400).json({ message: "Username sudah dipakai" });
     }
 
-    // Buat user baru
-    const user = new User({
+    // Generate OTP manual (4–6 digit)
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10  * 1000; // 10 detik
+
+    // Simpan ke Map sementara
+    pendingUsers.set(email.toLowerCase(), {
       username: username.trim(),
       email: email.toLowerCase(),
-      password,
-      displayName: username.trim(), // displayName otomatis = username
-      isEmailVerified: false,
+      password: password, 
+      displayName: username.trim(),
+      otp,
+      expiresAt,
     });
 
-    // Generate OTP dan simpan ke user
-    const otp = user.generateEmailVerificationOTP();
+    // Kirim email OTP
+    await sendEmail({
+      to: email,
+      subject: "Verifikasi Email Anda",
+      text: `Kode OTP Anda adalah: ${otp}`,
+      html: `<p>Halo ${username},</p>
+         <p>Berikut kode OTP untuk verifikasi email:</p>
+         <h2>${otp}</h2>
+         <p>OTP ini berlaku selama 10 menit.</p>`,
+    });
 
-    await user.save();
-
-    // TODO: Kirim OTP ke email user via email service (SMTP, SendGrid, Mailgun, dll)
-
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: "Registrasi berhasil. Silakan cek email untuk verifikasi.",
-      email: user.email,
+      message: "Kode OTP telah dikirim ke email Anda.",
+      email: email,
     });
   } catch (err) {
     console.error("[Register Error]", err);
@@ -101,7 +110,6 @@ const registerUser = async (req, res) => {
     });
   }
 };
-
 
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
@@ -164,12 +172,10 @@ const resendVerificationEmail = async (req, res) => {
     // TODO: Kirim ulang OTP via email (SMTP / SendGrid)
     console.log(`OTP untuk ${email}: ${newOTP}`);
 
-    return res
-      .status(200)
-      .json({
-        success: true,
-        message: "OTP telah dikirim ulang ke email Anda",
-      });
+    return res.status(200).json({
+      success: true,
+      message: "OTP telah dikirim ulang ke email Anda",
+    });
   } catch (error) {
     console.error("[Resend OTP Error]", error);
     return res
@@ -182,25 +188,38 @@ const verifyEmail = async (req, res) => {
   const { email, otp } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const pending = pendingUsers.get(email?.toLowerCase());
 
-    if (!user) {
-      return res.status(404).json({ message: "User tidak ditemukan" });
+    if (!pending) {
+      return res.status(404).json({
+        message: "Data pendaftaran tidak ditemukan atau sudah kadaluarsa",
+      });
     }
 
-    if (!otp || !user.isOTPValid(otp)) {
+    if (pending.otp !== otp || Date.now() > pending.expiresAt) {
       return res
         .status(400)
         .json({ message: "OTP tidak valid atau kadaluarsa" });
     }
 
-    user.isEmailVerified = true;
-    user.clearOTP();
+    // Simpan user ke database
+    const user = new User({
+      username: pending.username,
+      email: pending.email,
+      password: pending.password,
+      displayName: pending.displayName,
+      isEmailVerified: true,
+    });
+
     await user.save();
 
-    return res
-      .status(200)
-      .json({ success: true, message: "Email berhasil diverifikasi" });
+    // Hapus dari cache setelah berhasil
+    pendingUsers.delete(email.toLowerCase());
+
+    return res.status(201).json({
+      success: true,
+      message: "Email berhasil diverifikasi. Akun Anda telah dibuat.",
+    });
   } catch (error) {
     console.error("[Verify Email Error]", error);
     return res

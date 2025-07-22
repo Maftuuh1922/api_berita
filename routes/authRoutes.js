@@ -24,6 +24,7 @@ const router = express.Router();
 
 // ---------- Public Routes ----------
 router.post('/register', registerUser); // Daftar baru
+router.post('/registerUser', registerUser); // Endpoint tambahan untuk pendaftaran user
 router.post('/login', loginUser);       // Login pengguna
 router.post('/google', googleAuth);     // Login dengan Google
 

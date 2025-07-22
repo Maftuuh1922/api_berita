@@ -17,7 +17,6 @@ router.get('/cnn-news/:category', async (req, res) => {
     }
 });
 
-
 // RUTE KONTEN DENGAN METODE SCRAPING FINAL
 router.get('/content', async (req, res) => {
     const { url } = req.query;
@@ -75,6 +74,11 @@ router.get('/content', async (req, res) => {
             await browser.close();
         }
     }
+});
+
+router.get('/', (req, res) => {
+  // logika ambil berita dari database
+  res.json({ berita: [] }); // contoh response
 });
 
 module.exports = router;
