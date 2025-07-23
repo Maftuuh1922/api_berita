@@ -75,13 +75,13 @@ const registerUser = async (req, res) => {
 
     // Generate OTP manual (4–6 digit)
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10  * 1000; // 10 detik
+    const expiresAt = Date.now() + 1 * 60 * 1000; // 1 menit
 
     // Simpan ke Map sementara
     pendingUsers.set(email.toLowerCase(), {
       username: username.trim(),
       email: email.toLowerCase(),
-      password: password, 
+      password: password,
       displayName: username.trim(),
       otp,
       expiresAt,
@@ -95,7 +95,7 @@ const registerUser = async (req, res) => {
       html: `<p>Halo ${username},</p>
          <p>Berikut kode OTP untuk verifikasi email:</p>
          <h2>${otp}</h2>
-         <p>OTP ini berlaku selama 10 menit.</p>`,
+         <p>OTP ini berlaku selama 1 menit.</p>`,
     });
 
     return res.status(200).json({
@@ -156,34 +156,39 @@ const resendVerificationEmail = async (req, res) => {
   const { email } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    // Ambil data pending user dari Map
+    const pending = pendingUsers.get(email?.toLowerCase());
 
-    if (!user) {
-      return res.status(404).json({ message: "User tidak ditemukan" });
+    if (!pending) {
+      return res.status(404).json({ message: "Data pendaftaran tidak ditemukan atau sudah kadaluarsa" });
     }
 
-    if (user.isEmailVerified) {
-      return res.status(400).json({ message: "Email sudah diverifikasi" });
-    }
+    // Generate OTP baru
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 1 * 60 * 1000; // 1 menit
 
-    const newOTP = user.generateEmailVerificationOTP();
-    await user.save();
+    // Update OTP dan expiry di pendingUsers
+    pending.otp = otp;
+    pending.expiresAt = expiresAt;
+    pendingUsers.set(email.toLowerCase(), pending);
 
-    // TODO: Kirim ulang OTP via email (SMTP / SendGrid)
-    console.log(`OTP untuk ${email}: ${newOTP}`);
-
-    return res.status(200).json({
-      success: true,
-      message: "OTP telah dikirim ulang ke email Anda",
+    // Kirim email OTP baru
+    await sendEmail({
+      to: email,
+      subject: "Verifikasi Email Anda",
+      text: `Kode OTP Anda adalah: ${otp}`,
+      html: `<p>Halo ${pending.username},</p>
+         <p>Berikut kode OTP untuk verifikasi email:</p>
+         <h2>${otp}</h2>
+         <p>OTP ini berlaku selama 1 menit.</p>`,
     });
-  } catch (error) {
-    console.error("[Resend OTP Error]", error);
-    return res
-      .status(500)
-      .json({ message: "Terjadi kesalahan server. Coba lagi nanti." });
+
+    res.status(200).json({ message: "OTP dikirim ulang", expiresAt });
+  } catch (err) {
+    console.error("Gagal mengirim OTP:", err);
+    res.status(500).json({ message: "Gagal mengirim OTP ulang" });
   }
 };
-
 const verifyEmail = async (req, res) => {
   const { email, otp } = req.body;
 
@@ -247,6 +252,24 @@ const isEmailVerifiedStatus = (req, res) => {
     });
 };
 
+const checkOtpExpiry = (req, res) => {
+  const { email } = req.body;
+
+  const pending = pendingUsers.get(email?.toLowerCase());
+
+  if (!pending) {
+    return res
+      .status(404)
+      .json({ message: "OTP tidak ditemukan atau sudah kadaluarsa" });
+  }
+
+  return res.status(200).json({
+    success: true,
+    email: pending.email,
+    expiresAt: pending.expiresAt,
+  });
+};
+
 const resetPassword = (req, res) => {
   /* ... */
 };
@@ -276,6 +299,7 @@ module.exports = {
   resendVerificationEmail,
   verifyEmail,
   isEmailVerifiedStatus,
+  checkOtpExpiry,
   resetPassword,
   changePassword,
   checkEmailExists,

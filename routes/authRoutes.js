@@ -10,6 +10,7 @@ const {
     resendVerificationEmail,
     verifyEmail,
     isEmailVerifiedStatus,
+    checkOtpExpiry,
     resetPassword,
     changePassword,
     checkEmailExists,
@@ -30,6 +31,8 @@ router.post('/google', googleAuth);     // Login dengan Google
 
 router.post('/resend', resendVerificationEmail);  // Kirim ulang OTP
 router.post('/verify', verifyEmail);              // Verifikasi email via OTP
+router.post("/check-expiry", checkOtpExpiry); // Cek apakah OTP sudah kadaluarsa
+
 
 router.post('/reset-password', resetPassword);    // Reset password
 router.post('/check-email', checkEmailExists);    // Cek email apakah sudah terdaftar
