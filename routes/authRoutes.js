@@ -4,8 +4,6 @@ const {
     registerUser,
     loginUser,
     googleAuth,
-    getUserProfile,
-    updateUserProfile,
     deleteAccount,
     resendVerificationEmail,
     verifyEmail,
@@ -40,8 +38,6 @@ router.post('/check-displayname', checkDisplayNameExists); // (Opsional, tergant
 router.post('/refresh', refreshToken);            // Refresh access token
 
 // ---------- Protected Routes ----------
-router.get('/profile', protect, getUserProfile);              // Lihat profil
-router.patch('/profile', protect, updateUserProfile);         // Update profil
 router.delete('/account', protect, deleteAccount);            // Hapus akun
 router.post('/change-password', protect, changePassword);     // Ubah password
 router.get('/verified', protect, isEmailVerifiedStatus);      // Cek status verifikasi email

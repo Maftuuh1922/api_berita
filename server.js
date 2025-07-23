@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const connectDB = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes'); // Tambahkan ini
 const commentRoutes = require('./routes/commentRoutes');
 const uploadRoutes = require('./routes/uploadRoutes'); // Import rute upload
 const newsRoutes = require('./routes/newsRoutes'); // ← Tambahan untuk proxy berita
@@ -32,6 +33,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Rute API
 app.use('/api/auth', authRoutes);
+app.use('/api/user', userRoutes); // Tambahkan ini
 app.use('/api', commentRoutes); // Rute komentar lama
 app.use('/api', uploadRoutes);  // Rute upload
 app.use('/api/news', newsRoutes); // ← Rute proxy berita tambahan

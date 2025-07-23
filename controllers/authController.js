@@ -143,12 +143,6 @@ const loginUser = async (req, res) => {
 const googleAuth = (req, res) => {
   /* ... */
 };
-const getUserProfile = (req, res) => {
-  /* ... */
-};
-const updateUserProfile = (req, res) => {
-  /* ... */
-};
 const deleteAccount = (req, res) => {
   /* ... */
 };
@@ -293,8 +287,6 @@ module.exports = {
   registerUser,
   loginUser,
   googleAuth,
-  getUserProfile,
-  updateUserProfile,
   deleteAccount,
   resendVerificationEmail,
   verifyEmail,
