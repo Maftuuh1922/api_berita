@@ -1,34 +1,48 @@
 const mongoose = require('mongoose');
 
 const commentSchema = new mongoose.Schema({
-  articleId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Article'
-  },
-  articleUrl: {
+  articleIdentifier: {
     type: String,
-    required: true
+    required: true,
   },
-  userId: {
+  text: {
+    type: String,
+    required: true,
+  },
+  user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
-  },
-  content: {
-    type: String,
-    required: true
+    required: true,
   },
   parentId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Comment',
-    default: null
+    default: null,
   },
-  replies: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Comment'
-  }]
+  timestamp: {
+    type: Date,
+    default: Date.now,
+  },
+  likedBy: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+  ],
+  likeCount: {
+    type: Number,
+    default: 0,
+  },
 }, {
-  timestamps: true
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
+});
+
+// Virtual field untuk replies
+commentSchema.virtual('replies', {
+  ref: 'Comment',
+  localField: '_id',
+  foreignField: 'parentId',
 });
 
 module.exports = mongoose.model('Comment', commentSchema);

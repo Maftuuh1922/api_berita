@@ -1,28 +1,24 @@
-const asyncHandler = require('express-async-handler');
-const Comment = require('../models/Comment');
-const ArticleInteraction = require('../models/ArticleInteraction');
-const User = require('../models/User'); // Import User model
+const asyncHandler = require("express-async-handler");
+const Comment = require("../models/Comment");
+const ArticleInteraction = require("../models/ArticleInteraction");
+const User = require("../models/User");
 
-// @desc    Get comments for a specific article
-// @route   GET /api/articles/:articleIdentifier/comments
-// @access  Public
+// ✅ GET all top-level comments for a specific article
 const getCommentsForArticle = asyncHandler(async (req, res) => {
   const { articleIdentifier } = req.params;
 
-  // Find top-level comments and populate their replies
   const comments = await Comment.find({
     articleIdentifier: decodeURIComponent(articleIdentifier),
-    parentId: null, // Only fetch top-level comments
+    parentId: null,
   })
-    .sort({ timestamp: -1 }) // Newest first
+    .sort({ timestamp: -1 })
     .populate({
-      path: 'replies', // Populate replies
-      model: 'Comment',
-      options: { sort: { timestamp: 1 } }, // Oldest replies first
+      path: "replies",
+      model: "Comment",
+      options: { sort: { timestamp: 1 } },
     })
-    .lean(); // Return plain JavaScript objects for easier modification
+    .lean();
 
-  // Check if comments are liked by the current user if authenticated
   if (req.user) {
     for (let comment of comments) {
       comment.isLiked = comment.likedBy.includes(req.user.id);
@@ -35,124 +31,140 @@ const getCommentsForArticle = asyncHandler(async (req, res) => {
   res.json(comments);
 });
 
-// @desc    Post a new comment to an article
-// @route   POST /api/articles/:articleIdentifier/comments
-// @access  Private
+// ✅ GET replies to a specific comment
+const getRepliesForComment = asyncHandler(async (req, res) => {
+  const { parentCommentId } = req.params;
+
+  const replies = await Comment.find({ parentId: parentCommentId })
+    .sort({ timestamp: 1 })
+    .lean();
+
+  if (req.user) {
+    for (let reply of replies) {
+      reply.isLiked = reply.likedBy.includes(req.user.id);
+    }
+  }
+
+  res.json(replies);
+});
+
 const postComment = asyncHandler(async (req, res) => {
   const { articleIdentifier } = req.params;
   const { text } = req.body;
-  const user = req.user; // User from JWT
+  const user = req.user;
 
-  if (!user) {
+  if (!user || !user._id) {
     res.status(401);
-    throw new Error('Tidak terotorisasi, silakan login');
+    throw new Error("User tidak terautentikasi");
   }
 
-  if (!text || text.trim() === '') {
+  if (!text || text.trim() === "") {
     res.status(400);
-    throw new Error('Komentar tidak boleh kosong');
+    throw new Error("Komentar tidak boleh kosong");
   }
+
+  let decodedIdentifier;
+  try {
+    decodedIdentifier = decodeURIComponent(articleIdentifier);
+  } catch (err) {
+    res.status(400);
+    throw new Error("Article identifier tidak valid.");
+  }
+
+  const now = new Date();
 
   const comment = await Comment.create({
-    articleIdentifier: decodeURIComponent(articleIdentifier),
-    author: user.displayName || user.email, // Use display name or email from authenticated user
+    articleIdentifier: decodedIdentifier,
+    author: user.displayName || user.email,
     authorPhoto: user.photoUrl,
     text,
-    user: user._id, // Link comment to user
-    timestamp: new Date(),
+    user: user._id,
+    timestamp: now,
+    likeCount: 0,
+    likedBy: [],
+    parentId: null,
   });
 
-  res.status(201).json(comment);
+  res.status(201).json({
+    ...comment.toObject(),
+    replies: [],
+    isLiked: false,
+  });
 });
 
-// @desc    Post a reply to a comment
-// @route   POST /api/comments/:parentCommentId/replies
-// @access  Private
+// ✅ POST reply to comment
 const postReply = asyncHandler(async (req, res) => {
   const { parentCommentId } = req.params;
   const { text } = req.body;
   const user = req.user;
 
-  if (!user) {
-    res.status(401);
-    throw new Error('Tidak terotorisasi, silakan login');
-  }
-
-  if (!text || text.trim() === '') {
+  if (!text || text.trim() === "") {
     res.status(400);
-    throw new Error('Balasan tidak boleh kosong');
+    throw new Error("Balasan tidak boleh kosong");
   }
 
   const parentComment = await Comment.findById(parentCommentId);
   if (!parentComment) {
     res.status(404);
-    throw new Error('Komentar induk tidak ditemukan');
+    throw new Error("Komentar induk tidak ditemukan");
   }
 
   const reply = await Comment.create({
-    articleIdentifier: parentComment.articleIdentifier, // Inherit article ID from parent
+    articleIdentifier: parentComment.articleIdentifier,
     author: user.displayName || user.email,
     authorPhoto: user.photoUrl,
     text,
-    parentId: parentCommentId, // Link to parent comment
+    parentId: parentCommentId,
     user: user._id,
     timestamp: new Date(),
+    likeCount: 0,
+    likedBy: [],
   });
 
-  res.status(201).json(reply);
+  res.status(201).json({
+    ...reply.toObject(),
+    isLiked: false,
+  });
 });
 
-// @desc    Like/Unlike a comment
-// @route   POST /api/comments/:commentId/like
-// @access  Private
+// ✅ Like/unlike comment
 const likeComment = asyncHandler(async (req, res) => {
   const { commentId } = req.params;
   const user = req.user;
 
-  if (!user) {
-    res.status(401);
-    throw new Error('Tidak terotorisasi, silakan login');
-  }
-
   const comment = await Comment.findById(commentId);
   if (!comment) {
     res.status(404);
-    throw new Error('Komentar tidak ditemukan');
+    throw new Error("Komentar tidak ditemukan");
   }
 
   const userId = user._id;
-
-  // Check if user already liked the comment
   const hasLiked = comment.likedBy.includes(userId);
 
   if (hasLiked) {
-    // Unlike
-    comment.likeCount = Math.max(0, comment.likeCount - 1); // Ensure not negative
-    comment.likedBy = comment.likedBy.filter(id => id.toString() !== userId.toString());
-    await comment.save();
-    res.json({ message: 'Komentar tidak disukai', isLiked: false, likeCount: comment.likeCount });
+    comment.likeCount = Math.max(0, comment.likeCount - 1);
+    comment.likedBy = comment.likedBy.filter(
+      (id) => id.toString() !== userId.toString()
+    );
   } else {
-    // Like
     comment.likeCount += 1;
     comment.likedBy.push(userId);
-    await comment.save();
-    res.json({ message: 'Komentar disukai', isLiked: true, likeCount: comment.likeCount });
   }
+
+  await comment.save();
+
+  res.json({
+    message: hasLiked ? "Komentar tidak disukai" : "Komentar disukai",
+    isLiked: !hasLiked,
+    likeCount: comment.likeCount,
+  });
 });
 
-
-// @desc    Like/Unlike an article
-// @route   POST /api/articles/:articleUrl/like
-// @access  Private
+// ✅ Like/unlike article
 const likeArticle = asyncHandler(async (req, res) => {
   const { articleUrl } = req.params;
-  const { isLiked } = req.body; // Flutter sends this state directly
+  const { isLiked } = req.body;
   const user = req.user;
-
-  if (!user) {
-    res.status(401);
-    throw new Error('Tidak terotorisasi, silakan login');
-  }
 
   let interaction = await ArticleInteraction.findOne({
     user: user._id,
@@ -160,41 +172,28 @@ const likeArticle = asyncHandler(async (req, res) => {
   });
 
   if (!interaction) {
-    // Create new interaction if it doesn't exist
     interaction = await ArticleInteraction.create({
       user: user._id,
       articleUrl: decodeURIComponent(articleUrl),
-      isLiked: isLiked,
-      isBookmarked: false, // Default for other fields
+      isLiked,
+      isBookmarked: false,
     });
   } else {
-    // Update existing interaction
     interaction.isLiked = isLiked;
     await interaction.save();
   }
 
-  // Optionally update aggregate like count for the article (if you implement it)
-  // For simplicity, this endpoint only tracks user's like status.
-  // Aggregate count could be a separate collection or managed by a more complex system.
-
   res.json({
-    message: isLiked ? 'Artikel disukai' : 'Artikel tidak disukai',
+    message: isLiked ? "Artikel disukai" : "Artikel tidak disukai",
     isLiked: interaction.isLiked,
   });
 });
 
-// @desc    Save/Unsave an article (bookmark)
-// @route   POST /api/articles/:articleUrl/save
-// @access  Private
+// ✅ Save/un-save article
 const saveArticle = asyncHandler(async (req, res) => {
   const { articleUrl } = req.params;
-  const { isSaved } = req.body; // Flutter sends this state directly
+  const { isSaved } = req.body;
   const user = req.user;
-
-  if (!user) {
-    res.status(401);
-    throw new Error('Tidak terotorisasi, silakan login');
-  }
 
   let interaction = await ArticleInteraction.findOne({
     user: user._id,
@@ -202,45 +201,37 @@ const saveArticle = asyncHandler(async (req, res) => {
   });
 
   if (!interaction) {
-    // Create new interaction if it doesn't exist
     interaction = await ArticleInteraction.create({
       user: user._id,
       articleUrl: decodeURIComponent(articleUrl),
-      isLiked: false, // Default for other fields
+      isLiked: false,
       isBookmarked: isSaved,
     });
   } else {
-    // Update existing interaction
     interaction.isBookmarked = isSaved;
     await interaction.save();
   }
 
   res.json({
-    message: isSaved ? 'Artikel disimpan' : 'Artikel tidak disimpan',
+    message: isSaved ? "Artikel disimpan" : "Artikel tidak disimpan",
     isSaved: interaction.isBookmarked,
   });
 });
 
-// @desc    Share an article (log the action)
-// @route   POST /api/articles/:articleUrl/share
-// @access  Private (or Public, depending on logging needs)
+// ✅ Share article
 const shareArticle = asyncHandler(async (req, res) => {
   const { articleUrl } = req.params;
-  const user = req.user; // User may or may not be authenticated
-
-  // For simplicity, we just send a success response.
-  // In a real app, you might log this action, increment a share count, etc.
-  console.log(`Article shared: ${decodeURIComponent(articleUrl)} by user ${user ? user.id : 'guest'}`);
+  const user = req.user;
 
   let interaction = await ArticleInteraction.findOne({
-    user: user ? user._id : null, // If guest, maybe don't record or use a default guest ID
+    user: user ? user._id : null,
     articleUrl: decodeURIComponent(articleUrl),
   });
 
   if (interaction) {
     interaction.shareCount = (interaction.shareCount || 0) + 1;
     await interaction.save();
-  } else if (user) { // Only create interaction if user is logged in
+  } else if (user) {
     await ArticleInteraction.create({
       user: user._id,
       articleUrl: decodeURIComponent(articleUrl),
@@ -248,30 +239,28 @@ const shareArticle = asyncHandler(async (req, res) => {
     });
   }
 
-  res.json({ message: 'Artikel berhasil dibagikan' });
+  res.json({ message: "Artikel berhasil dibagikan" });
 });
 
-// @desc    Get article statistics (likes, saves, shares)
-// @route   GET /api/articles/:articleUrl/stats
-// @access  Public
+// ✅ Get stats for article
 const getArticleStats = asyncHandler(async (req, res) => {
   const { articleUrl } = req.params;
-  const user = req.user; // May be null if not authenticated
+  const user = req.user;
 
-  // Aggregate stats for the article
   const interactions = await ArticleInteraction.find({
     articleUrl: decodeURIComponent(articleUrl),
   });
 
   const stats = {
-    totalLikes: interactions.filter(i => i.isLiked).length,
-    totalSaves: interactions.filter(i => i.isBookmarked).length,
+    totalLikes: interactions.filter((i) => i.isLiked).length,
+    totalSaves: interactions.filter((i) => i.isBookmarked).length,
     totalShares: interactions.reduce((sum, i) => sum + (i.shareCount || 0), 0),
   };
 
-  // If user is authenticated, include their personal interaction status
   if (user) {
-    const userInteraction = interactions.find(i => i.user.toString() === user._id.toString());
+    const userInteraction = interactions.find(
+      (i) => i.user.toString() === user._id.toString()
+    );
     stats.userLiked = userInteraction ? userInteraction.isLiked : false;
     stats.userSaved = userInteraction ? userInteraction.isBookmarked : false;
   }
@@ -279,32 +268,69 @@ const getArticleStats = asyncHandler(async (req, res) => {
   res.json(stats);
 });
 
-// @desc    Get user's saved articles
-// @route   GET /api/user/saved-articles
-// @access  Private
+// ✅ Get saved articles by user
 const getSavedArticles = asyncHandler(async (req, res) => {
   const user = req.user;
-
-  if (!user) {
-    res.status(401);
-    throw new Error('Tidak terotorisasi, silakan login');
-  }
 
   const savedInteractions = await ArticleInteraction.find({
     user: user._id,
     isBookmarked: true,
   }).sort({ updatedAt: -1 });
 
-  const savedArticles = savedInteractions.map(interaction => ({
-    articleUrl: interaction.articleUrl,
-    savedAt: interaction.updatedAt,
+  const savedArticles = savedInteractions.map((i) => ({
+    articleUrl: i.articleUrl,
+    savedAt: i.updatedAt,
   }));
 
   res.json(savedArticles);
 });
 
+// ✅ Update comment
+const updateComment = asyncHandler(async (req, res) => {
+  const { commentId } = req.params;
+  const { text } = req.body;
+
+  const comment = await Comment.findById(commentId);
+  if (!comment) {
+    res.status(404);
+    throw new Error("Komentar tidak ditemukan");
+  }
+
+  if (comment.user.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error("Kamu tidak diizinkan mengedit komentar ini");
+  }
+
+  comment.text = text;
+  await comment.save();
+
+  res.json({ message: "Komentar berhasil diperbarui", comment });
+});
+
+// ✅ Delete comment
+const deleteComment = asyncHandler(async (req, res) => {
+  const { commentId } = req.params;
+
+  const comment = await Comment.findById(commentId);
+  if (!comment) {
+    res.status(404);
+    throw new Error("Komentar tidak ditemukan");
+  }
+
+  if (comment.user.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error("Kamu tidak diizinkan menghapus komentar ini");
+  }
+
+  await Comment.deleteMany({ parentId: comment._id });
+  await comment.deleteOne();
+
+  res.json({ message: "Komentar berhasil dihapus" });
+});
+
 module.exports = {
   getCommentsForArticle,
+  getRepliesForComment,
   postComment,
   postReply,
   likeComment,
@@ -313,4 +339,6 @@ module.exports = {
   shareArticle,
   getArticleStats,
   getSavedArticles,
+  updateComment,
+  deleteComment,
 };

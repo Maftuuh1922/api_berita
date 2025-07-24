@@ -1,5 +1,10 @@
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
+const fs = require('fs');
+const uploadDir = 'uploads/profile_images';
+if (!fs.existsSync(uploadDir)){
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 
 const getUserProfile = async (req, res) => {
@@ -18,30 +23,16 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// Edit profil: displayName dan password
 const editProfile = async (req, res) => {
   try {
-    const userId = req.user.id; // diasumsikan middleware protect sudah menambahkan req.user
-    const { displayName, password } = req.body;
+    const { username, displayName } = req.body;
 
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User tidak ditemukan" });
-    }
-
-    if (displayName) {
-      user.displayName = displayName;
-    }
-
-    if (password) {
-      if (password.length < 8) {
-        return res.status(400).json({ message: "Password minimal 8 karakter" });
-      }
-      const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(password, salt);
-    }
-
-    await user.save();
+    // Update username dan displayName
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { username, displayName },
+      { new: true }
+    );
 
     res.status(200).json({
       success: true,
@@ -49,6 +40,7 @@ const editProfile = async (req, res) => {
       user: {
         id: user._id,
         email: user.email,
+        username: user.username,
         displayName: user.displayName,
         photoUrl: user.photoUrl,
         isEmailVerified: user.isEmailVerified,

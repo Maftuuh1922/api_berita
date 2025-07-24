@@ -1,41 +1,41 @@
 const jwt = require('jsonwebtoken');
-const asyncHandler = require('express-async-handler'); // Helper for async routes
+const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 
 const protect = asyncHandler(async (req, res, next) => {
   let token;
 
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+  if (req.headers.authorization?.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+
+    // Validasi token kosong/null/undefined
+    if (!token || token === 'null' || token === 'undefined') {
+      return res.status(401).json({ message: 'Token tidak valid' });
+    }
+
     try {
-      // Get token from header
-      token = req.headers.authorization.split(' ')[1];
-
-      // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-      // Attach user from token payload (excluding password)
       req.user = await User.findById(decoded.id).select('-password');
 
-      // Check if user exists (edge case if user deleted after token issued)
       if (!req.user) {
-        res.status(401);
-        throw new Error('Tidak terotorisasi, user tidak ditemukan');
+        return res.status(401).json({ message: 'User tidak ditemukan' });
       }
 
       next();
     } catch (error) {
-      console.error(error);
-      res.status(401);
-      if (error.name === 'TokenExpiredError') {
-        throw new Error('Token kadaluarsa. Silakan login ulang.');
-      }
-      throw new Error('Tidak terotorisasi, token gagal');
-    }
-  }
+      console.error('Auth Error:', error);
 
-  if (!token) {
-    res.status(401);
-    throw new Error('Tidak terotorisasi, tidak ada token');
+      if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({ message: 'Token kadaluarsa. Silakan login ulang.' });
+      }
+      if (error.name === 'JsonWebTokenError') {
+        return res.status(401).json({ message: 'Token tidak valid' });
+      }
+
+      return res.status(401).json({ message: 'Tidak terotorisasi' });
+    }
+  } else {
+    return res.status(401).json({ message: 'Token diperlukan' });
   }
 });
 

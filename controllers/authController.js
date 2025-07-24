@@ -183,6 +183,7 @@ const resendVerificationEmail = async (req, res) => {
     res.status(500).json({ message: "Gagal mengirim OTP ulang" });
   }
 };
+
 const verifyEmail = async (req, res) => {
   const { email, otp } = req.body;
 
@@ -267,8 +268,36 @@ const checkOtpExpiry = (req, res) => {
 const resetPassword = (req, res) => {
   /* ... */
 };
-const changePassword = (req, res) => {
-  /* ... */
+const changePassword = async (req, res) => {
+  try {
+    const userId = req.user.id; // diasumsikan sudah diisi oleh middleware protect
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Password lama dan baru wajib diisi" });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: "Password baru minimal 8 karakter" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User tidak ditemukan" });
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Password lama salah" });
+    }
+
+    user.password = newPassword; // Tidak perlu hash manual
+    await user.save();
+
+    res.status(200).json({ success: true, message: "Password berhasil diubah" });
+  } catch (error) {
+    res.status(500).json({ message: "Gagal mengganti password", error: error.message });
+  }
 };
 const checkEmailExists = (req, res) => {
   /* ... */

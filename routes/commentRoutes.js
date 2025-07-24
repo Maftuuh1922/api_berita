@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 const {
   getCommentsForArticle,
   postComment,
@@ -8,32 +9,55 @@ const {
   likeArticle,
   saveArticle,
   shareArticle,
+  updateComment,
+  deleteComment,
+  getRepliesForComment
 } = require('../controllers/commentController');
 
-// Middleware untuk autentikasi (pastikan middleware ini ada)
 const { protect } = require('../middleware/authMiddleware');
 
-// Comment routes
-router.route('/articles/:articleIdentifier/comments')
-  .get(getCommentsForArticle)      // GET /api/articles/:articleIdentifier/comments
-  .post(protect, postComment);     // POST /api/articles/:articleIdentifier/comments
+// ======================
+// 📌 Comment Routes
+// ======================
 
-// Reply routes
-router.route('/comments/:parentCommentId/replies')
-  .post(protect, postReply);       // POST /api/comments/:parentCommentId/replies
+// Ambil semua komentar untuk artikel
+router.get('/articles/:articleIdentifier/comments', getCommentsForArticle);
 
-// Like comment
-router.route('/comments/:commentId/like')
-  .post(protect, likeComment);     // POST /api/comments/:commentId/like
+// Kirim komentar ke artikel
+router.post('/articles/:articleIdentifier/comments', protect, postComment);
 
-// Article interaction routes
-router.route('/articles/:articleUrl/like')
-  .post(protect, likeArticle);     // POST /api/articles/:articleUrl/like
+// Edit komentar
+router.put('/comments/:commentId', protect, updateComment);
 
-router.route('/articles/:articleUrl/save')
-  .post(protect, saveArticle);     // POST /api/articles/:articleUrl/save
+// Hapus komentar
+router.delete('/comments/:commentId', protect, deleteComment);
 
-router.route('/articles/:articleUrl/share')
-  .post(protect, shareArticle);    // POST /api/articles/:articleUrl/share
+// ======================
+// 📌 Reply Routes
+// ======================
+
+// Balas komentar
+router.post('/comments/:parentCommentId/replies', protect, postReply);
+router.get('/comments/:parentCommentId/replies', getRepliesForComment);
+
+// ======================
+// 📌 Interaksi Komentar
+// ======================
+
+// Like komentar
+router.post('/comments/:commentId/like', protect, likeComment);
+
+// ======================
+// 📌 Interaksi Artikel
+// ======================
+
+// Like artikel
+router.post('/articles/:articleUrl/like', protect, likeArticle);
+
+// Save artikel
+router.post('/articles/:articleUrl/save', protect, saveArticle);
+
+// Share artikel
+router.post('/articles/:articleUrl/share', protect, shareArticle);
 
 module.exports = router;
